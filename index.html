@@ -620,8 +620,8 @@ const BOXF={
   sale_move:[['farmId','من مزرعة','ent','farm'],['merchantId','إلى مبيع','ent','merchant'],['count','العدد','num'],['driverId','السائق','ent','driver',1]],
   empty_back:[['merchantId','من مبيع','ent','merchant'],['farmId','إلى مزرعة','ent','farm'],['count','العدد','num'],['driverId','السائق','ent','driver',1]],
   farm_swap:[['fromId','من مزرعة','ent','farm'],['toId','إلى مزرعة','ent','farm'],['count','العدد','num']],
-  fix_d2i:[['locId','الموقع','ent','loc'],['count','العدد','num']],
-  fix_i2d:[['locId','الموقع','ent','loc'],['count','العدد','num']],
+  fix_d2i:[['count','العدد','num']],
+  fix_i2d:[['count','العدد','num']],
   out_noone:[['locId','من موقع','ent','loc'],['cond','الحالة','cond'],['count','العدد','num']],
   in_nosource:[['locId','إلى موقع','ent','loc'],['cond','الحالة','cond'],['count','العدد','num']],
   opening_box:[['locId','الموقع','ent','loc'],['oIntact','بكش سليم','num',null,1],['oDamaged','بكش تالف','num',null,1]]
@@ -631,19 +631,25 @@ function buildLegs(op,p){
   const L={
     issue_farm:()=>[[WH,v('toId'),'intact',n('count')]],
     scrap_out:()=>[[WH,'#RECYCLE','damaged',n('count')]],
-    /* الوارد يحمل السليم والتالف في حركة واحدة — الصناديق كلها تدخل المخزن */
+    /* قاعدة النموذج: عهدة الجهات «سليم» فقط، والتالف لا يوجد إلا في المخزن.
+       الصندوق خرج للجهة سليماً، فيُخصم من عهدتها سليماً حتى لو رجع تالفاً،
+       ويدخل المخزن تالفاً. تحويل الحالة يمرّ عبر عقدة التصحيح #ADJ. */
     return_in:()=>[[v('fromId'),WH,'intact',n('okCount')||n('count')],
-                   [v('fromId'),WH,'damaged',n('dmgCount')]],
+                   [v('fromId'),'#ADJ','intact',n('dmgCount')],
+                   ['#ADJ',WH,'damaged',n('dmgCount')]],
     factory_replace:()=>[[WH,'#SUPPLY','damaged',n('damagedOut')],['#SUPPLY',WH,'intact',n('intactIn')]],
     purchase_in:()=>[['#PURCHASE',WH,'intact',n('count')]],
     sale_move:()=>[[v('farmId'),v('merchantId'),'intact',n('count')]],
     empty_back:()=>[[v('merchantId'),v('farmId'),'intact',n('count')]],
     farm_swap:()=>[[v('fromId'),v('toId'),'intact',n('count')]],
-    fix_d2i:()=>[[v('locId'),'#ADJ','damaged',n('count')],['#ADJ',v('locId'),'intact',n('count')]],
-    fix_i2d:()=>[[v('locId'),'#ADJ','intact',n('count')],['#ADJ',v('locId'),'damaged',n('count')]],
-    out_noone:()=>[[v('locId'),'#LOSS',v('cond')||'intact',n('count')]],
-    in_nosource:()=>[['#EXT',v('locId'),v('cond')||'intact',n('count')]],
-    opening_box:()=>[['#OPEN',v('locId'),'intact',n('oIntact')],['#OPEN',v('locId'),'damaged',n('oDamaged')]]
+    /* تصحيح الحالة في المخزن وحده — لا وجود لتالف خارجه */
+    fix_d2i:()=>[[WH,'#ADJ','damaged',n('count')],['#ADJ',WH,'intact',n('count')]],
+    fix_i2d:()=>[[WH,'#ADJ','intact',n('count')],['#ADJ',WH,'damaged',n('count')]],
+    /* خارج المخزن الحالة سليم إجباراً */
+    out_noone:()=>[[v('locId'),'#LOSS',v('locId')===WH?(v('cond')||'intact'):'intact',n('count')]],
+    in_nosource:()=>[['#EXT',v('locId'),v('locId')===WH?(v('cond')||'intact'):'intact',n('count')]],
+    opening_box:()=>[['#OPEN',v('locId'),'intact',n('oIntact')],
+                     ['#OPEN',v('locId'),'damaged',v('locId')===WH?n('oDamaged'):0]]
   }[op];
   return (L?L():[]).map(([f,t,c,ct])=>({from:f,to:t,cond:c,count:ct})).filter(l=>l.count>0);
 }
@@ -1091,8 +1097,8 @@ function custodyList(arr){
   const l=arr.filter(x=>x.box.total||x.box.loss);
   return `<div class="drill">`+(l.length?l.sort((a,b)=>b.box.total-a.box.total).map(x=>
     `<button class="drow" data-act="repEntity" data-id="${x.id}"><span class="tname">${esc(x.name)}</span>
-      <span style="color:var(--muted);font-size:11.5px">سليم ${x.box.intact} · تالف ${x.box.damaged}${x.box.loss?` · فاقد ${x.box.loss}`:''}${x.box.total<0?' · سلفة':''}</span>
-      <b style="color:${x.box.total<0?'var(--paid)':'inherit'}">${x.box.total}</b><span class="go">‹</span></button>`).join(''):`<div class="empty" style="margin:8px 0">لا عهدة</div>`)+`</div>`;
+      <span style="color:var(--muted);font-size:11.5px">${x.box.loss?`فاقد ${x.box.loss}`:''}${x.box.intact<0?' · عندنا':''}</span>
+      <b style="color:${x.box.intact<0?'var(--credit)':'inherit'}">${x.box.intact}</b><span class="go">‹</span></button>`).join(''):`<div class="empty" style="margin:8px 0">لا عهدة</div>`)+`</div>`;
 }
 
 /* ---------- ٢) الحسابات ---------- */
@@ -1223,11 +1229,11 @@ const BOXHINT={
   sale_move:'تنقل العُهدة من المزرعة إلى المبيع. المخزن لا يدخل هذه الحركة.',
   empty_back:'رجوع البكش الفارغة من المبيع إلى مزرعة.',
   farm_swap:'نقل عُهدة بين مزرعتين مباشرة.',
-  fix_d2i:'تصحيح خطأ رصد فقط — الإجمالي لا يتغيّر.',
-  fix_i2d:'تصحيح خطأ رصد فقط — الإجمالي لا يتغيّر.',
-  out_noone:'ضياع أو سرقة — يُقيَّد فاقداً على الموقع.',
+  fix_d2i:'تصحيح خطأ رصد داخل المخزن — التالف لا يوجد إلا فيه، والإجمالي لا يتغيّر.',
+  fix_i2d:'تصحيح خطأ رصد داخل المخزن — الإجمالي لا يتغيّر.',
+  out_noone:'ضياع أو سرقة — يُقيَّد فاقداً على الموقع. خارج المخزن يُحسب سليماً.',
   in_nosource:'بكش مجهول المصدر دخل الموقع.',
-  opening_box:'نقطة البداية قبل تشغيل التطبيق — للمخزن أو أي جهة.'
+  opening_box:'نقطة البداية قبل تشغيل التطبيق. خانة التالف للمخزن وحده.'
 };
 function opsBox(){
   const D=S.D;
@@ -1258,7 +1264,7 @@ function auditForm(){
     <div class="field"><label>الجهة المجرودة <span class="hint">اختر «المخزن» لجرد المخزن</span></label>
       ${entPick('locId','loc','')}</div>
     <div class="row"><div class="field"><label>المعدود سليم</label><input type="number" name="cIntact" min="0" step="1" inputmode="numeric" value="0"></div>
-      <div class="field"><label>المعدود تالف</label><input type="number" name="cDamaged" min="0" step="1" inputmode="numeric" value="0"></div></div>
+      <div class="field" data-role="cdmg"><label>المعدود تالف</label><input type="number" name="cDamaged" min="0" step="1" inputmode="numeric" value="0"></div></div>
     <div data-role="adiff"></div>
     <div class="field"><label>ملاحظة</label><input name="note" placeholder="من حضر الجرد…"></div>
     <button class="btn" type="submit">اعتماد الجرد وتسوية الفرق</button>
@@ -1295,9 +1301,8 @@ function bxBal(){
   const rows=[...D.mBox,...D.fBox]
     .filter(h=>h.box.total||h.box.loss).sort((a,b)=>b.box.total-a.box.total).map(h=>
     `<tr><td class="tname">${esc(h.name)}</td><td><span class="tag">${({farm:'مزرعة',merchant:'مبيع'})[h.type]}</span></td>
-     <td class="n">${h.box.intact}</td><td class="n" style="color:var(--debt)">${h.box.damaged}</td>
-     <td class="n" style="font-weight:700;color:${h.box.total<0?'var(--paid)':'inherit'}">${h.box.total}</td>
-     <td class="n" style="color:var(--debt)">${h.box.loss||''}</td></tr>`).join('');
+     <td class="n" style="font-weight:600;color:${h.box.intact<0?'var(--credit)':'inherit'}">${h.box.intact}</td>
+     <td class="n cout">${h.box.loss||''}</td></tr>`).join('');
   return `<div class="card"><div class="row" style="text-align:center">
     <div><div class="note" style="margin:0">سليم بالمخزن</div><div class="num" style="font-size:20px;font-weight:700;color:var(--paid)">${w.intact}</div></div>
     <div><div class="note" style="margin:0">تالف بالمخزن</div><div class="num" style="font-size:20px;font-weight:700;color:var(--debt)">${w.damaged}</div></div>
@@ -1305,8 +1310,15 @@ function bxBal(){
     <div><div class="note" style="margin:0">إجمالي العهدة</div><div class="num" style="font-size:20px;font-weight:700">${D.custody.all}</div></div></div>
     ${w.intact<0||w.damaged<0?`<p class="note">رصيد المخزن سالب — يعني صرفاً سبق تسجيل رصيده الافتتاحي أو شرائه. سجّل «رصيد بكش افتتاحي» للمخزن من «جرد وتسويات» لضبط نقطة البداية.</p>`:''}</div>
   <div class="eyebrow">أرصدة الجهات</div>
-  <div class="card">${rows?`<table><thead><tr><th>الجهة</th><th>النوع</th><th class="n">سليم</th><th class="n">تالف</th><th class="n">إجمالي</th><th class="n">فاقد</th></tr></thead><tbody>${rows}</tbody></table>
-    <p class="note">الرصيد بالسالب معناه بكش سلفة من الجهة عندنا — حالة مشروعة وليست خطأ.</p>`:`<div class="empty">لا عهدة بالخارج.</div>`}</div>
+  <div class="card">${rows?`<div class="tscroll"><table>
+    <thead><tr><th>الجهة</th><th>النوع</th><th class="n">العهدة (سليم)</th><th class="n">فاقد</th></tr></thead>
+    <tbody>${rows}</tbody>
+    <tfoot><tr><td colspan="2">الإجمالي</td>
+      <td class="n">${D.custody.merchants+D.custody.farms}</td>
+      <td class="n">${sum([...D.mBox,...D.fBox],h=>h.box.loss)}</td></tr></tfoot></table></div>
+    <p class="note">عهدة الجهات <b>سليم فقط</b> — التالف لا يوجد إلا في المخزن.<br>
+      الرصيد بالسالب معناه بكش يخصّ الجهة محتفظين بيه عندنا — حالة مشروعة.</p>`
+    :`<div class="empty">لا عهدة بالخارج.</div>`}</div>
   ${boxLog(null,12)}`;
 }
 function legsTxt(e){return legsOf(e).map(l=>`${S.D.nameOf(l.from)} ← ${S.D.nameOf(l.to)}: ${l.count} ${CONDAR[l.cond]}`).join(" · ")}
@@ -1570,22 +1582,26 @@ function repBox(){
         <td>${esc(BOXOP[e.op]||'حركة')}${e.auto?' <span class="tag">آلي</span>':''}</td>
         <td>${esc([...other].join(' · ')||'—')}</td>
         <td class="n cin">${ii+id||''}</td><td class="n cout">${oo+od2||''}</td>
-        <td class="n" style="font-weight:600">${ri}/${rd}</td></tr>`}).join('');
+        <td class="n" style="font-weight:600">${loc===WH?ri+'/'+rd:ri}</td></tr>`}).join('');
     const tbl=`<table><thead><tr><th>التاريخ</th><th>العملية</th><th>الطرف الآخر</th>
-      <th class="n">وارد</th><th class="n">صادر</th><th class="n">الرصيد سليم/تالف</th></tr></thead>
+      <th class="n">وارد</th><th class="n">صادر</th>
+      <th class="n">${loc===WH?'الرصيد سليم/تالف':'العهدة'}</th></tr></thead>
       <tbody><tr><td colspan="3">رصيد افتتاحي للفترة</td><td class="n"></td><td class="n"></td>
-        <td class="n" style="font-weight:600">${oi}/${od}</td></tr>${rows}</tbody>
+        <td class="n" style="font-weight:600">${loc===WH?oi+'/'+od:oi}</td></tr>${rows}</tbody>
       <tfoot><tr><td colspan="3">الإجمالي (${mine.length} حركة)</td>
         <td class="n">${TI}</td><td class="n">${TO}</td>
-        <td class="n">${ri}/${rd}</td></tr></tfoot></table>`;
+        <td class="n">${loc===WH?ri+'/'+rd:ri}</td></tr></tfoot></table>`;
     S.print={title:`كشف عهدة البكش — ${D.nameOf(loc)}`,html:tbl,phone:D.phoneOf(loc)};
     const b=D.boxOf(loc);
     return t+`<div class="eyebrow">كشف عهدة — ${esc(D.nameOf(loc))}</div>
       <div class="card">
-        <div class="diff"><span>رصيد افتتاحي للفترة</span><b>${oi} سليم · ${od} تالف</b></div>
+        <div class="diff"><span>رصيد افتتاحي للفترة</span>
+          <b>${loc===WH?`${oi} سليم · ${od} تالف`:`${oi} صندوق`}</b></div>
         ${mine.length?`<div class="tscroll">${tbl}</div>`:'<div class="empty">لا حركات في المدى المحدد</div>'}
-        <div class="diff over"><span>رصيد آخر الفترة</span><b>${ri} سليم · ${rd} تالف</b></div>
-        <div class="diff"><span>الرصيد الحالي الكلي</span><b>${b.intact} سليم · ${b.damaged} تالف${b.loss?` · فاقد ${b.loss}`:''}</b></div>
+        <div class="diff over"><span>رصيد آخر الفترة</span>
+          <b>${loc===WH?`${ri} سليم · ${rd} تالف`:`${ri} صندوق`}</b></div>
+        <div class="diff"><span>الرصيد الحالي الكلي</span>
+          <b>${loc===WH?`${b.intact} سليم · ${b.damaged} تالف`:`${b.intact} صندوق`}${b.loss?` · فاقد ${b.loss}`:''}</b></div>
         <p class="note">يشمل ترحيل البكش الآلي المصاحب لفواتير البيع (المعلَّم بـ«آلي»).
           غيّر «الجهة» من الفلتر فوق لعرض كشف مزرعة أو مبيع آخر.</p></div>`;
   }
@@ -1771,38 +1787,52 @@ const ENTAR={farm:'مزرعة',merchant:'مبيع',driver:'سائق',route:'رح
    بدل كتابة إشارة — أوضح للمستخدم وأضمن من ناحية الإدخال. */
 const OPENDIR={merchant:['عليه','له'],farm:['لها','عليها'],
   driver:['له','عليه'],ice:['له','عليه']};
-/* مصنع الثلج لا يتعامل مع البكش إطلاقاً — نقدية فقط */
-const OPENBOX={merchant:1,farm:1};
+/* ما الذي يملكه كل نوع من رصيد افتتاحي:
+   المزرعة بكش فقط · المبيع نقدية وبكش · السائق والمصنع نقدية فقط.
+   والبكش «سليم» فقط — التالف لا يوجد إلا في المخزن. */
+const OPENHAS={merchant:{cash:1,box:1},farm:{box:1},driver:{cash:1},ice:{cash:1}};
 function OPENF(t){
-  if(t==='route')return '';
+  const H=OPENHAS[t];
+  if(!H)return '';
+  const CASHNOTE={merchant:'«عليه» = مديونية سابقة · «له» = دفعة مقدّمة عنده',
+    driver:'«له» = مستحق له علينا · «عليه» = سلف زائدة عليه',
+    ice:'«له» = مستحق له علينا · «عليه» = مدفوع بالزيادة'};
+  const BOXNOTE={merchant:'«عنده» = بكش في عهدته · «عندنا» = بكش تخصّه محتفظين بيه',
+    farm:'«عندها» = بكش في عهدتها · «عندنا» = بكش يخصّها محتفظين بيه'};
   return `<div class="eyebrow" style="margin-top:4px">أرصدة افتتاحية <span class="free">— اختياري</span></div>
-  <div class="field"><label>رصيد نقدي افتتاحي (ج.م)</label>
+  ${H.cash?`<div class="field"><label>رصيد نقدي افتتاحي (ج.م)</label>
     <div class="pkg">
-      <button type="button" data-sv="1" aria-pressed="true">${(OPENDIR[t]||['عليه','له'])[0]}</button>
-      <button type="button" data-sv="-1" aria-pressed="false">${(OPENDIR[t]||['عليه','له'])[1]}</button>
+      <button type="button" data-sv="1" data-for="openSign" aria-pressed="true">${(OPENDIR[t]||['عليه','له'])[0]}</button>
+      <button type="button" data-sv="-1" data-for="openSign" aria-pressed="false">${(OPENDIR[t]||['عليه','له'])[1]}</button>
     </div>
     <input type="hidden" name="openSign" value="1">
     <input type="text" name="openCash" inputmode="decimal" value="0" placeholder="0">
-    <p class="note" data-role="opdir">${{merchant:'«عليه» = مديونية سابقة · «له» = دفعة مقدّمة عنده',
-      farm:'«لها» = مستحق لها علينا · «عليها» = مدفوع لها بالزيادة',
-      driver:'«له» = مستحق له علينا · «عليه» = سلف زائدة عليه',
-      ice:'«له» = مستحق له علينا · «عليه» = مدفوع بالزيادة'}[t]||''}</p></div>
-  ${OPENBOX[t]?`<div class="row">
-    <div class="field"><label>بكش سليم</label><input type="number" name="openIntact" step="1" inputmode="numeric" value="0"></div>
-    <div class="field"><label>بكش تالف</label><input type="number" name="openDamaged" step="1" inputmode="numeric" value="0"></div></div>`:''}
+    <p class="note">${CASHNOTE[t]||''}</p></div>`:''}
+  ${H.box?`<div class="field"><label>رصيد بكش افتتاحي <span class="hint">سليم — التالف في المخزن وحده</span></label>
+    <div class="pkg">
+      <button type="button" data-sv="1" data-for="openBoxSign" aria-pressed="true">${t==='farm'?'عندها':'عنده'}</button>
+      <button type="button" data-sv="-1" data-for="openBoxSign" aria-pressed="false">عندنا</button>
+    </div>
+    <input type="hidden" name="openBoxSign" value="1">
+    <input type="number" name="openIntact" min="0" step="1" inputmode="numeric" value="0" placeholder="0">
+    <p class="note">${BOXNOTE[t]||''}</p></div>`:''}
   <div class="field"><label>تاريخ الرصيد الافتتاحي</label><input type="date" name="openDate" value="${todayISO()}"></div>`;
 }
 /* تُسجَّل كحركتين في السجل: نقدية وبكش — لا كخانة في البطاقة */
 async function postOpening(ent,p){
   const d=p.openDate||todayISO();
-  const cash=Math.abs(+p.openCash||0)*(+p.openSign||1);   /* الاتجاه من الزرّين */
-  const oi=Math.round(+p.openIntact||0),od=Math.round(+p.openDamaged||0);
+  const cash=Math.abs(+p.openCash||0)*(+p.openSign||1);
+  /* عهدة البكش سليم فقط، وتقبل السالب: بكش يخصّ الجهة محتفظين به عندنا */
+  const box=Math.abs(Math.round(+p.openIntact||0))*(+p.openBoxSign||1);
   if(cash)await append({type:'opening_cash',date:d,entityId:ent.id,entityType:ent.type,
     amount:cash,note:'رصيد افتتاحي'});
-  if(oi||od){const params={locId:ent.id,oIntact:oi,oDamaged:od};
-    await append({type:'box',op:'opening_box',date:d,legs:buildLegs('opening_box',params),
-      params,note:'رصيد بكش افتتاحي'})}
-  if(cash||oi||od)toast("سُجّل الرصيد الافتتاحي كحركة مؤرَّخة","ok");
+  if(box){
+    const params={locId:ent.id,oIntact:Math.abs(box),dir:box<0?-1:1};
+    const legs=box>0?[{from:'#OPEN',to:ent.id,cond:'intact',count:box}]
+                    :[{from:ent.id,to:'#OPEN',cond:'intact',count:-box}];
+    await append({type:'box',op:'opening_box',date:d,legs,params,note:'رصيد بكش افتتاحي'});
+  }
+  if(cash||box)toast("سُجّل الرصيد الافتتاحي كحركة مؤرَّخة","ok");
 }
 /* التصفية النهائية: خطوات متدرّجة تمنع الضغط بالغلط —
    اختيار النطاق، ثم النسخة الاحتياطية، ثم كتابة كلمة تأكيد، ثم رقم الأونر. */
@@ -2119,7 +2149,8 @@ function onClick(ev){
   const sv=ev.target.closest('[data-sv]');
   if(sv){const fld=sv.closest('.field');
     sv.parentElement.querySelectorAll('[data-sv]').forEach(x=>x.setAttribute('aria-pressed',String(x===sv)));
-    const h=fld&&fld.querySelector('input[name=openSign]');if(h)h.value=sv.dataset.sv;
+    const h=fld&&fld.querySelector('input[name="'+(sv.dataset.for||'openSign')+'"]');
+    if(h)h.value=sv.dataset.sv;
     return;}
   const gb=ev.target.closest('[data-pkg]');
   if(gb){(S.pkg||(S.pkg={}))[gb.dataset.pkg]=gb.dataset.g;return render()}
@@ -2238,11 +2269,15 @@ function syncSettle(){
 }
 function wireAudit(f){
   const upd=()=>{const loc=f.locId.value,out=$('[data-role=adiff]',f);
+    /* خانة التالف تظهر للمخزن وحده — الجهات لا تحمل تالفاً */
+    const dw=$('[data-role=cdmg]',f);
+    if(dw)dw.style.display=(loc===WH)?'':'none';
+    if(loc!==WH&&f.cDamaged)f.cDamaged.value=0;
     if(!loc)return out.innerHTML='';
     const b=S.D.boxOf(loc),ci=+f.cIntact.value||0,cd=+f.cDamaged.value||0,di=ci-b.intact,dd=cd-b.damaged;
     const L=(l,bk,ct,d)=>`<div class="diff ${d<0?'short':d>0?'over':''}"><span>${l} · دفتري <b>${bk}</b> · معدود <b>${ct}</b></span>
       <b>${d===0?'مطابق':(d<0?'عجز '+(-d):'زيادة '+d)}</b></div>`;
-    out.innerHTML=L('سليم',b.intact,ci,di)+L('تالف',b.damaged,cd,dd)};
+    out.innerHTML=L('سليم',b.intact,ci,di)+(loc===WH?L('تالف',b.damaged,cd,dd):'')};
   f.locId.addEventListener('change',upd);f.cIntact.addEventListener('input',upd);f.cDamaged.addEventListener('input',upd);upd();
 }
 
@@ -2542,12 +2577,16 @@ function runTests(){
   d=D([inv('a',1000),{type:'void',voidOf:'a'}]);
   ok("الحذف يطرح الحركة من الأرصدة",d.merchants[0].balance===0);
 
+  /* نفس أرجل buildLegs الحقيقية: التالف يخرج من الجهة سليماً ويدخل المخزن تالفاً */
   const ret=(ok,dmg,reason,drv)=>({type:'box',op:'return_in',driverId:drv,dmgReason:reason,
-    legs:[{from:'m1',to:'WH',cond:'intact',count:ok},{from:'m1',to:'WH',cond:'damaged',count:dmg}]
-      .filter(l=>l.count>0)});
+    legs:[{from:'m1',to:'WH',cond:'intact',count:ok},
+          {from:'m1',to:'#ADJ',cond:'intact',count:dmg},
+          {from:'#ADJ',to:'WH',cond:'damaged',count:dmg}].filter(l=>l.count>0)});
   d=D([ret(50,8,'negligence','d1')]);
   ok("الوارد يحمل سليماً وتالفاً معاً",d.wh.intact===50&&d.wh.damaged===8);
   ok("التالف يدخل حساب المخزن عادي",d.boxOf('WH').total===58);
+  ok("عهدة المبيع سليم فقط — بلا تالف",d.boxOf('m1').damaged===0);
+  ok("التالف الراجع يُخصم من عهدة المبيع سليماً",d.boxOf('m1').intact===-58);
   ok("السائق بلا عهدة بكش",d.boxOf('d1').total===0);
   ok("التالف بإهمال عدّاد على السائق",d.drivers[0].dmg.open===8&&d.drivers[0].dmg.neg===8);
   ok("عدّاد التالف لا يمسّ رصيد السائق المالي",d.drivers[0].balance===0);
@@ -2623,8 +2662,12 @@ function runTests(){
        bx('opening_box',[{from:'#OPEN',to:'i1',cond:'intact',count:99}])]);
   ok("مصنع الثلج خارج حساب العهدة",d.custody.all===0&&d.factories[0].balance===200);
 
-  d=D([bx('opening_box',[{from:'#OPEN',to:'m1',cond:'intact',count:40},{from:'#OPEN',to:'m1',cond:'damaged',count:5}])]);
-  ok("رصيد بكش افتتاحي يظهر في العهدة",d.boxOf('m1').intact===40&&d.boxOf('m1').damaged===5);
+  d=D([bx('opening_box',[{from:'#OPEN',to:'m1',cond:'intact',count:40}])]);
+  ok("رصيد بكش افتتاحي موجب",d.boxOf('m1').intact===40);
+  d=D([bx('opening_box',[{from:'m1',to:'#OPEN',cond:'intact',count:25}])]);
+  ok("رصيد بكش افتتاحي سالب للمبيع",d.boxOf('m1').intact===-25);
+  d=D([bx('fix_d2i',[{from:'WH',to:'#ADJ',cond:'damaged',count:7},{from:'#ADJ',to:'WH',cond:'intact',count:7}])]);
+  ok("تصحيح الحالة داخل المخزن وحده",d.wh.intact===7&&d.wh.damaged===-7);
   d=D([bx('opening_box',[{from:'#OPEN',to:'WH',cond:'intact',count:100}]),
        bx('issue_farm',[{from:'WH',to:'f1',cond:'intact',count:130}])]);
   ok("العهدة بالسالب مسموحة ومحسوبة",d.wh.intact===-30&&d.boxOf('f1').intact===130);
