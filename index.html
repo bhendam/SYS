@@ -253,6 +253,16 @@ button{cursor:pointer;border:0;border-radius:11px;font-weight:600;letter-spacing
 #pklist .drow .tname{flex:0 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #pklist .drow span:nth-child(2){margin-inline-start:auto}
 
+/* تبويب فصل المجموعات فوق الاقتراحات */
+.pkg{display:flex;gap:5px;background:var(--card-2);padding:4px;border-radius:11px;
+  border:1px solid var(--line);margin-bottom:10px}
+.pkg button{flex:1;background:none;border:0;padding:9px 10px;border-radius:8px;font-size:14px;
+  color:var(--muted);font-family:inherit;min-height:42px;cursor:pointer}
+.pkg button[aria-pressed=true]{background:var(--card);color:var(--ink);font-weight:600;
+  box-shadow:0 1px 3px rgba(10,31,42,.12)}
+.pchip.pkwh{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+.pchip.pkwh[aria-pressed=true]{background:var(--accent);color:#fff}
+
 /* نسبة المكتب كرقمين: ٤ / ٩٦ */
 .ratio{display:flex;align-items:center;gap:10px}
 .ratio input{flex:1;text-align:center;font-size:19px;font-weight:600;
@@ -874,6 +884,13 @@ function picker(name,kind,sel,o={}){
    > ٢٤ جهة  → آخر المستخدمة ظاهرة + بحث فوري في الباقي (حالة المزارع).
    القيمة تُحفظ في حقل مخفي بنفس الاسم، فلا يتغيّر أي منطق قائم. */
 const PICKMAX=24;
+/* الأنواع المركّبة تُعرض مفصولة بتبويب فوق الاقتراحات — أسماء المبايع والمزارع
+   قد تتشابه، والخلط بينها يسبب أخطاء تسجيل. الوارد يبدأ على «مبايع» لأنه الغالب. */
+const PICKGROUPS={
+  farmerchant:[['merchant','مبايع'],['farm','مزارع']],
+  loc:[['merchant','مبايع'],['farm','مزارع']]
+};
+const GTAG={merchant:'مبيع',farm:'مزرعة',driver:'سائق',ice:'مصنع',route:'رحلة'};
 let _pk=0;
 function entList(t){
   const D=S.D;
@@ -881,7 +898,16 @@ function entList(t){
     loc:D.locOptions,farmerchant:[...D.farms,...D.merchants]}[t]||[];
 }
 function entPick(name,type,sel,o={}){
-  const items=entList(type),id='pk'+(++_pk);
+  const id='pk'+(++_pk);
+  const groups=PICKGROUPS[type];
+  let items=entList(type),gkey='',gcur='',pinWH=false;
+  if(groups){
+    gkey=name+':'+type;
+    gcur=(S.pkg||(S.pkg={}))[gkey]||groups[0][0];
+    S.pkg[gkey]=gcur;
+    items=entList(gcur);
+    pinWH=(type==='loc');
+  }
   const many=items.length>PICKMAX;
   let show=items;
   if(many){
@@ -891,9 +917,17 @@ function entPick(name,type,sel,o={}){
     if(sel&&!show.some(i=>i.id===sel)){const x=items.find(i=>i.id===sel);if(x)show.unshift(x)}
   }
   const chip=i=>`<button type="button" class="pchip" data-pv="${i.id}" aria-pressed="${i.id===sel}">${esc(i.name)}</button>`;
-  return `<div class="pick" id="${id}" data-name="${name}" data-ent="${type}">
+  /* المختار يظل ظاهراً حتى لو من مجموعة أخرى، حتى لا يبدو الحقل فاضياً */
+  const outside=sel&&!show.some(i=>i.id===sel)&&!(pinWH&&sel===WH)
+    ?entList(type).find(i=>i.id===sel):null;
+  return `<div class="pick" id="${id}" data-name="${name}" data-ent="${groups?gcur:type}">
     <input type="hidden" name="${name}" value="${sel||''}"${o.role?` data-role="${o.role}"`:''}>
+    ${groups?`<div class="pkg">${groups.map(([g,l])=>
+      `<button type="button" data-pkg="${gkey}" data-g="${g}" aria-pressed="${g===gcur}">${l}</button>`).join('')}
+      </div>`:''}
     <div class="pkrow">
+      ${pinWH?`<button type="button" class="pchip pkwh" data-pv="${WH}" aria-pressed="${sel===WH}">المخزن</button>`:''}
+      ${outside?`<button type="button" class="pchip" data-pv="${outside.id}" aria-pressed="true">${esc(outside.name)} <span style="opacity:.7">· ${GTAG[outside.type]||''}</span></button>`:''}
       ${show.map(chip).join('')}
       ${o.optional?`<button type="button" class="pchip" data-pv="" aria-pressed="${!sel}">بدون</button>`:''}
       ${many?`<button type="button" class="pchip pksearch" data-act="pkOpen" data-pk="${id}">🔎 بحث في ${items.length}</button>`:''}
@@ -903,6 +937,7 @@ function entPick(name,type,sel,o={}){
 /* ورقة البحث: تصفية فورية بالاسم أو المكان */
 function openPicker(pkId){
   const el=$('#'+pkId);if(!el)return;
+  /* data-ent يحمل المجموعة الحالية للأنواع المركّبة، فالبحث داخلها وحدها */
   const type=el.dataset.ent,cur=el.querySelector('input').value;
   const items=entList(type);
   const draw=q=>{
@@ -910,6 +945,7 @@ function openPicker(pkId){
     const f=t?items.filter(i=>(i.name+' '+(i.place||'')).toLowerCase().includes(t)):items;
     return f.slice(0,80).map(i=>`<button type="button" class="drow" data-pv="${i.id}">
       <span class="tname">${esc(i.name)}</span>
+      <span class="tag">${GTAG[i.type]||''}</span>
       ${i.place?`<span style="color:var(--muted);font-size:13px">${esc(i.place)}</span>`:''}
       <span class="go">${i.id===cur?'✓':'‹'}</span></button>`).join('')||`<div class="empty">لا نتائج لـ «${esc(q)}»</div>`;
   };
@@ -939,7 +975,7 @@ function setPick(pkId,val){
   el.querySelectorAll('.pchip[data-pv]').forEach(b=>{
     const on=b.dataset.pv===val;b.setAttribute('aria-pressed',String(on));if(on)found=true});
   if(val&&!found){
-    const it=entList(el.dataset.ent).find(i=>i.id===val);
+    const it=entList(el.dataset.ent).find(i=>i.id===val)||(val===WH?{id:WH,name:'المخزن'}:null);
     if(it){const b=document.createElement('button');b.type='button';b.className='pchip';
       b.dataset.pv=val;b.setAttribute('aria-pressed','true');b.textContent=it.name;
       row.insertBefore(b,row.firstChild)}
@@ -1731,15 +1767,26 @@ const ENTF={
 };
 const ENTAR={farm:'مزرعة',merchant:'مبيع',driver:'سائق',route:'رحلة',ice:'مصنع ثلج'};
 /* حقول الرصيد الافتتاحي — تظهر عند الإضافة وفي ورقة «رصيد افتتاحي» للجهات القديمة */
-const OPENLBL={merchant:'رصيد نقدي افتتاحي عليه',farm:'رصيد نقدي افتتاحي لها',
-  driver:'رصيد نقدي افتتاحي له',ice:'رصيد نقدي افتتاحي له'};
+/* لوحة المفاتيح الرقمية على الموبايل ما فيهاش علامة سالب، فالاتجاه يُختار بزرّين
+   بدل كتابة إشارة — أوضح للمستخدم وأضمن من ناحية الإدخال. */
+const OPENDIR={merchant:['عليه','له'],farm:['لها','عليها'],
+  driver:['له','عليه'],ice:['له','عليه']};
 /* مصنع الثلج لا يتعامل مع البكش إطلاقاً — نقدية فقط */
 const OPENBOX={merchant:1,farm:1};
 function OPENF(t){
   if(t==='route')return '';
   return `<div class="eyebrow" style="margin-top:4px">أرصدة افتتاحية <span class="free">— اختياري</span></div>
-  <div class="field"><label>${OPENLBL[t]} (ج.م) <span class="hint">بالسالب لو العكس</span></label>
-    <input type="text" name="openCash" inputmode="decimal" value="0"></div>
+  <div class="field"><label>رصيد نقدي افتتاحي (ج.م)</label>
+    <div class="pkg">
+      <button type="button" data-sv="1" aria-pressed="true">${(OPENDIR[t]||['عليه','له'])[0]}</button>
+      <button type="button" data-sv="-1" aria-pressed="false">${(OPENDIR[t]||['عليه','له'])[1]}</button>
+    </div>
+    <input type="hidden" name="openSign" value="1">
+    <input type="text" name="openCash" inputmode="decimal" value="0" placeholder="0">
+    <p class="note" data-role="opdir">${{merchant:'«عليه» = مديونية سابقة · «له» = دفعة مقدّمة عنده',
+      farm:'«لها» = مستحق لها علينا · «عليها» = مدفوع لها بالزيادة',
+      driver:'«له» = مستحق له علينا · «عليه» = سلف زائدة عليه',
+      ice:'«له» = مستحق له علينا · «عليه» = مدفوع بالزيادة'}[t]||''}</p></div>
   ${OPENBOX[t]?`<div class="row">
     <div class="field"><label>بكش سليم</label><input type="number" name="openIntact" step="1" inputmode="numeric" value="0"></div>
     <div class="field"><label>بكش تالف</label><input type="number" name="openDamaged" step="1" inputmode="numeric" value="0"></div></div>`:''}
@@ -1747,7 +1794,8 @@ function OPENF(t){
 }
 /* تُسجَّل كحركتين في السجل: نقدية وبكش — لا كخانة في البطاقة */
 async function postOpening(ent,p){
-  const d=p.openDate||todayISO(),cash=+p.openCash||0;
+  const d=p.openDate||todayISO();
+  const cash=Math.abs(+p.openCash||0)*(+p.openSign||1);   /* الاتجاه من الزرّين */
   const oi=Math.round(+p.openIntact||0),od=Math.round(+p.openDamaged||0);
   if(cash)await append({type:'opening_cash',date:d,entityId:ent.id,entityType:ent.type,
     amount:cash,note:'رصيد افتتاحي'});
@@ -2068,6 +2116,13 @@ function onClick(ev){
   if(pc){const box=pc.closest('.pick');if(box)return setPick(box.id,pc.dataset.pv)}
   const wc=ev.target.closest('[data-wipe]');
   if(wc){S.wipe.kind=wc.dataset.wipe;return drawWipe()}
+  const sv=ev.target.closest('[data-sv]');
+  if(sv){const fld=sv.closest('.field');
+    sv.parentElement.querySelectorAll('[data-sv]').forEach(x=>x.setAttribute('aria-pressed',String(x===sv)));
+    const h=fld&&fld.querySelector('input[name=openSign]');if(h)h.value=sv.dataset.sv;
+    return;}
+  const gb=ev.target.closest('[data-pkg]');
+  if(gb){(S.pkg||(S.pkg={}))[gb.dataset.pkg]=gb.dataset.g;return render()}
   const b=ev.target.closest('[data-act]');if(!b)return;
   const a=b.dataset.act,id=b.dataset.id;
   const go=(tab,sub)=>{S.tab=tab;if(sub)Object.assign(S.sub,sub);S.toTop=true;render()};
