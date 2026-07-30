@@ -377,20 +377,44 @@ nav button[aria-selected=true]{color:var(--accent);font-weight:600}
 nav button[aria-selected=true] .ic{filter:none;opacity:1}
 
 /* ---------------- التنبيهات والحوارات ---------------- */
-/* زر التسجيل العائم: التسجيل أهم فعل في التطبيق، فلا يصحّ أن يحتاج تنقّلاً */
-#fab{position:fixed;inset-inline-end:16px;bottom:calc(94px + env(safe-area-inset-bottom));z-index:60;
-  width:58px;height:58px;border-radius:50%;background:var(--accent);color:#fff;border:0;
-  box-shadow:0 8px 22px -6px rgba(10,31,42,.5);display:grid;place-items:center;cursor:pointer;
-  transition:background .2s,transform .12s}
-#fab span{font-size:32px;line-height:1;font-weight:300;margin-top:-3px}
+/* زر التسجيل الطافي: خيارات تطلع فوقه بدل شاشة كاملة —
+   الوصول لأي قسم بلمستين من أي مكان في التطبيق. */
+#fabwrap{position:fixed;inset:0;z-index:60;pointer-events:none}
+#fabwrap.hide{display:none}
+#fabbd{position:absolute;inset:0;background:rgba(10,31,42,.35);opacity:0;visibility:hidden;
+  transition:opacity .18s;pointer-events:none}
+#fabwrap.on #fabbd{opacity:1;visibility:visible;pointer-events:auto}
+#fab{position:absolute;inset-inline-end:16px;bottom:calc(92px + env(safe-area-inset-bottom));
+  width:60px;height:60px;border-radius:50%;background:var(--accent);color:#fff;border:0;
+  box-shadow:0 10px 26px -8px rgba(10,31,42,.55);display:grid;place-items:center;cursor:pointer;
+  pointer-events:auto;transition:transform .2s}
+#fab span{font-size:34px;line-height:1;font-weight:300;margin-top:-3px}
 #fab:active{transform:scale(.93)}
-#fab.hide{display:none}
-.fabgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:4px}
-.fabgrid button{background:var(--card);border:1.5px solid var(--line-2);border-radius:14px;
-  padding:16px 12px;display:flex;flex-direction:column;align-items:center;gap:8px;
-  font-size:14.5px;font-weight:600;color:var(--ink);font-family:inherit;cursor:pointer;min-height:88px}
-.fabgrid button i{font-size:26px;font-style:normal;line-height:1}
-.fabgrid button:active{background:var(--card-2)}
+#fabwrap.on #fab{transform:rotate(45deg)}
+#fabmenu{position:absolute;inset-inline-end:18px;
+  bottom:calc(162px + env(safe-area-inset-bottom));display:flex;flex-direction:column;
+  align-items:flex-end;gap:11px;pointer-events:none}
+#fabmenu button{display:flex;align-items:center;gap:11px;background:var(--card);color:var(--ink);
+  border:1.5px solid var(--line-2);border-radius:30px;padding:9px 10px 9px 18px;font-family:inherit;
+  font-size:15px;font-weight:600;cursor:pointer;box-shadow:0 6px 18px -8px rgba(10,31,42,.5);
+  opacity:0;transform:translateY(14px) scale(.9);transition:opacity .16s,transform .16s;
+  pointer-events:none;min-height:50px;white-space:nowrap}
+#fabwrap.on #fabmenu button{opacity:1;transform:none;pointer-events:auto}
+#fabwrap.on #fabmenu button:nth-child(1){transition-delay:.10s}
+#fabwrap.on #fabmenu button:nth-child(2){transition-delay:.07s}
+#fabwrap.on #fabmenu button:nth-child(3){transition-delay:.04s}
+#fabwrap.on #fabmenu button:nth-child(4){transition-delay:.01s}
+#fabmenu button i{font-style:normal;font-size:20px;width:38px;height:38px;border-radius:50%;
+  display:grid;place-items:center;flex:0 0 auto}
+#fabmenu .f-acct i{background:var(--primary-bg)}
+#fabmenu .f-box  i{background:#FAEBEC}
+#fabmenu .f-drv  i{background:#FAF0DC}
+#fabmenu .f-ice  i{background:#E2EFF6}
+@media (prefers-color-scheme:dark){
+  #fabmenu .f-box i{background:#3A1B20}
+  #fabmenu .f-drv i{background:#33270F}
+  #fabmenu .f-ice i{background:#10303F}
+}
 
 #toast{position:fixed;inset-inline:16px;bottom:calc(96px + env(safe-area-inset-bottom));z-index:95;
   display:flex;flex-direction:column;gap:9px;pointer-events:none;align-items:center}
@@ -468,7 +492,7 @@ nav button[aria-selected=true] .ic{filter:none;opacity:1}
 <header>
   <div class="brand">
     <div class="mark" id="hdrLogo">🐟</div>
-    <div><h1 id="hdrName">دفتر السماكة</h1><div class="hdr-sub" id="hdrSub">سجل تراكمي · يعمل بدون إنترنت</div></div>
+    <div><h1 id="hdrName">دفتر السماكة</h1><div class="hdr-sub" id="hdrSub">—</div></div>
     <div class="today"><span>اليوم</span><b id="hdrDate">—</b></div>
   </div>
   <div class="band"></div>
@@ -481,8 +505,16 @@ nav button[aria-selected=true] .ic{filter:none;opacity:1}
   <button data-tab="rep"><span class="ic">📈</span>التقارير</button>
   <button data-tab="set"><span class="ic">⚙️</span>الإعدادات</button>
 </nav>
-<button id="fab" data-act="fabOpen" aria-label="تسجيل عملية جديدة">
-  <span>+</span></button>
+<div id="fabwrap">
+  <div id="fabbd" data-act="fabClose"></div>
+  <div id="fabmenu">
+    <button data-act="fabGo" data-go="fin|fin|invoice" class="f-acct"><span>حسابات</span><i>🧾</i></button>
+    <button data-act="fabGo" data-go="ops|ops|box"     class="f-box"><span>بكش</span><i>📦</i></button>
+    <button data-act="fabGo" data-go="ops|ops|drv"     class="f-drv"><span>سائقين</span><i>🚚</i></button>
+    <button data-act="fabGo" data-go="ops|ops|ice"     class="f-ice"><span>ثلج</span><i>🧊</i></button>
+  </div>
+  <button id="fab" data-act="fabToggle" aria-label="تسجيل عملية" aria-expanded="false"><span>+</span></button>
+</div>
 <div id="toast"></div>
 <div id="modal"><div class="sheet" id="sheet"></div></div>
 <div id="dlg" role="dialog" aria-modal="true"></div>
@@ -573,6 +605,7 @@ const askPin=(title)=>dialog({title,input:{type:'password',mode:'numeric',placeh
 function toast(m,k=""){const t=document.createElement('div');t.className='toast '+k;t.textContent=m;$('#toast').appendChild(t);setTimeout(()=>t.remove(),2800)}
 
 /* ============ قاعدة البيانات ============ */
+const APPVER="2.4.1";   /* يظهر في الترويسة والإعدادات للتأكد من النسخة المُشغَّلة */
 const DBN="fish_trade_ledger",DBV=2;let DBH=null;
 function openDB(){return new Promise((res,rej)=>{
   const rq=indexedDB.open(DBN,DBV);
@@ -862,6 +895,7 @@ function render(){
   const sy=window.scrollY;
   $('#hdrDate').textContent=arDate(todayISO());
   $('#hdrName').textContent=S.co.name||"دفتر السماكة";
+  $('#hdrSub').textContent=`نسخة ${APPVER} · يعمل بدون إنترنت`;
   const hl=$('#hdrLogo');
   hl.className='mark'+(S.co.logo?'':' own');
   hl.innerHTML=S.co.logo?`<img src="${S.co.logo}" alt="">`:BRANDMARK;
@@ -891,8 +925,7 @@ function render(){
       if(el&&el.focus){el.focus();try{el.setSelectionRange(keep.ss,keep.se)}catch(e){}}
     }
   }
-  const fab=$('#fab');
-  if(fab)fab.classList.toggle('hide',S.tab==='set');
+  paintFab();
   window.scrollTo(0,S.toTop?0:sy);S.toTop=false;
 }
 /* اختيار الجهة: القوائم المنسدلة تحتاج لمستين وتمريراً وقراءة نص صغير.
@@ -2086,19 +2119,20 @@ async function doWipe(){
     toast(kind==='all'?`تم المسح: ${n} حركة و${m} جهة`:`تم مسح ${n} حركة — الجهات محفوظة`,"ok");
   }catch(e){toast("تعذّرت التصفية: "+(e.message||''),"err")}
 }
-/* اختصارات التسجيل السريع من أي شاشة */
-const FABS=[
-  ['🧾','فاتورة بيع','fin|fin|invoice'],
-  ['💰','تحصيل','fin|fin|collect'],
-  ['📥','وارد بكش','ops|ops|box|box|in'],
-  ['📤','صرف بكش','ops|ops|box|box|out'],
-  ['🚚','رحلة سائق','ops|ops|drv|drv|trips'],
-  ['🧊','عملية ثلج','ops|ops|ice|ice|op']
-];
-function openFab(){
-  openSheet("تسجيل عملية","اختر نوع العملية — بتفتح على طول بدون تنقّل.",
-    `<div class="fabgrid">${FABS.map(([ic,l,go])=>
-      `<button type="button" data-act="fabGo" data-go="${go}"><i>${ic}</i>${l}</button>`).join('')}</div>`);
+/* الخيارات الطافية: أربعة أقسام تنقل مباشرة لصفحة عملياتها.
+   الحالة في S.fab لا في صنف CSS — لأن render يعيد بناء الشاشة وكان يمسح الصنف.
+   ومصدر واحد للحقيقة يمنع تعارض المستمعات. */
+function paintFab(){
+  const w=$('#fabwrap');if(!w)return;
+  const hide=S.tab==='set'||S.tab==='rep';
+  if(hide)S.fab=false;
+  w.classList.toggle('hide',hide);
+  w.classList.toggle('on',!!S.fab);
+  const b=$('#fab');if(b)b.setAttribute('aria-expanded',String(!!S.fab));
+}
+function fabToggle(force){
+  S.fab=force===undefined?!S.fab:!!force;
+  paintFab();
 }
 function addOpen(id){
   const e=S.entities.find(x=>x.id===id);if(!e)return;
@@ -2194,7 +2228,15 @@ function setCo(){
 }
 function setSec(){
   const D=S.D;
-  return `<div class="eyebrow debt">الأمان والصلاحيات</div>
+  return `<div class="eyebrow">تحديث التطبيق</div>
+  <div class="card">
+    <div class="diff"><span>النسخة المُشغَّلة الآن</span><b>${APPVER}</b></div>
+    <p class="note" style="margin-top:10px">لو رفعت نسخة جديدة على GitHub والتطبيق لسه بيوريك القديمة،
+      اضغط الزر ده: بيمسح الملفات المخزَّنة ويعيد التحميل من السيرفر.
+      <b>بياناتك ما بتتأثرش</b> — محفوظة في مكان تاني تماماً.</p>
+    <button class="btn ghost" data-act="forceUpdate" style="margin-top:10px">🔄 تحديث التطبيق الآن</button>
+  </div>
+  <div class="eyebrow debt">الأمان والصلاحيات</div>
   <div class="card">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <div style="flex:1"><b style="font-size:13.5px">الرقم السري للأونر</b>
@@ -2359,7 +2401,10 @@ function wire(root){
   const af=$('form[data-form=audit]',root);if(af)wireAudit(af);
   if($('form[data-form=settle]',root))wireSettle(root);
 }
+let _lastEv=null;
 function onClick(ev){
+  /* لو تعدّدت المستمعات لأي سبب، لا يُنفَّذ الأمر إلا مرة واحدة لكل ضغطة */
+  if(ev===_lastEv)return; _lastEv=ev;
   const pc=ev.target.closest('.pchip[data-pv]');
   if(pc){const box=pc.closest('.pick');if(box)return setPick(box.id,pc.dataset.pv)}
   const qv=ev.target.closest('[data-qv]');
@@ -2386,11 +2431,13 @@ function onClick(ev){
     case 'saveAgain':{const f=b.closest('form');if(!f)return;S.again=true;
       if(f.requestSubmit)f.requestSubmit();
       else f.dispatchEvent(new Event('submit',{cancelable:true,bubbles:true}));return}
-    case 'fabOpen':return openFab();
+    case 'fabToggle':return fabToggle();
+    case 'fabClose':return fabToggle(false);
     case 'fabGo':{const [tab,k,v,k2,v2]=b.dataset.go.split('|');
-      S.tab=tab;if(k)S.sub[k]=v;if(k2)S.sub[k2]=v2;S.toTop=true;closeSheet();return render()}
+      S.tab=tab;if(k)S.sub[k]=v;if(k2)S.sub[k2]=v2;S.toTop=true;fabToggle(false);return render()}
     case 'install':return doInstall();
     case 'installDiag':return installDiag();
+    case 'forceUpdate':return forceUpdate();
     case 'swRetry':return (async()=>{
       try{
         const reg=await navigator.serviceWorker.register('sw.js',{scope:'./'});
@@ -3143,8 +3190,10 @@ function importJSON(){
 
 /* ============ الإقلاع ============ */
 /* مستمعان معلَّقان مرة واحدة فقط — التعليق داخل render يكرّر تنفيذ الأوامر */
-$('#app').addEventListener('click',onClick);
-$('#sheet').addEventListener('click',onClick);
+/* مستمع واحد على المستند كله: أي زر يحمل data-act يعمل أينما كان،
+   فلا يتكرر خطأ «زر خارج الحاوية لا يستجيب». */
+document.addEventListener('click',onClick);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')fabToggle(false)});
 $('#nav').addEventListener('click',ev=>{const b=ev.target.closest('button[data-tab]');if(!b)return;
   S.tab=b.dataset.tab;S.toTop=true;render()});
 /* ============ التثبيت كتطبيق ============
@@ -3191,6 +3240,25 @@ if('serviceWorker' in navigator && location.protocol.startsWith('http')){
 
 /* تشخيص التثبيت: يفحص شروط كروم واحداً واحداً ويقول أيّها لم يتحقق.
    بدونه يظل المستخدم يخمّن لماذا يظهر «اختصار» بدل «تطبيق». */
+/* تحديث قسري: يلغي عامل الخدمة ويمسح الكاش ثم يعيد التحميل.
+   IndexedDB خارج نطاق المسح تماماً، فالبيانات آمنة. */
+async function forceUpdate(){
+  if(!await ask("تحديث التطبيق",
+    "هيتمسح الملفات المخزَّنة وتُحمَّل النسخة الجديدة من السيرفر.\nبياناتك محفوظة ولن تتأثر.",
+    {ok:"تحديث"}))return;
+  try{
+    if('serviceWorker' in navigator){
+      const rs=await navigator.serviceWorker.getRegistrations();
+      await Promise.all(rs.map(r=>r.unregister()));
+    }
+    if(globalThis.caches){
+      const ks=await caches.keys();
+      await Promise.all(ks.map(k=>caches.delete(k)));
+    }
+    toast("تم المسح — جارٍ إعادة التحميل","ok");
+    setTimeout(()=>location.reload(),700);
+  }catch(e){toast("تعذّر التحديث: "+(e.message||''),"err")}
+}
 async function installDiag(){
   const R=[],add=(n,ok,hint,act)=>R.push({n,ok,hint:ok?'':hint,act:ok?null:act});
   const https=location.protocol==='https:'||location.hostname==='localhost';
